@@ -2,12 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
-APP_DIR="$HOME/Applications"
-DATA_DIR="$HOME/.local/share/needyghostty"
-LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-PLIST_NAME="com.needyghostty.plist"
+APP_DIR="${APP_DIR:-$HOME/Applications}"
 APP_BUNDLE="$APP_DIR/NeedyGhostty.app"
+BIN_LINK="${BIN_DIR:-$HOME/.local/bin}/needyghostty"
+DATA_DIR="$HOME/.local/share/needyghostty"
 
 echo "Installing NeedyGhostty..."
 
@@ -18,18 +16,14 @@ if ! command -v swift &>/dev/null; then
 fi
 
 # Create directories
-mkdir -p "$BIN_DIR" "$DATA_DIR" "$LAUNCH_AGENTS_DIR" "$APP_DIR"
+mkdir -p "$(dirname "$BIN_LINK")" "$DATA_DIR" "$APP_DIR"
 
 # Build
 echo "  Building..."
 cd "$SCRIPT_DIR"
 swift build -c release 2>&1 | tail -1
 
-# Install CLI binary (for hooks)
-echo "  Installing CLI binary..."
-cp .build/release/needyghostty "$BIN_DIR/needyghostty"
-
-# Create app bundle (for menu bar + native notifications)
+# Create app bundle
 echo "  Creating app bundle..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 cp .build/release/needyghostty "$APP_BUNDLE/Contents/MacOS/needyghostty"
@@ -44,6 +38,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <string>NeedyGhostty</string>
     <key>CFBundleVersion</key>
     <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
     <key>CFBundleExecutable</key>
     <string>needyghostty</string>
     <key>CFBundlePackageType</key>
@@ -54,34 +50,37 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc sign for notification permissions
+# Sign and register
 echo "  Signing app bundle..."
 codesign --force --deep -s - "$APP_BUNDLE"
-
-# Register with Launch Services
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_BUNDLE"
 
-# Install LaunchAgent
-echo "  Installing LaunchAgent..."
-sed "s|{{APP_DIR}}|$APP_DIR|g" "$SCRIPT_DIR/$PLIST_NAME" > "$LAUNCH_AGENTS_DIR/$PLIST_NAME"
-launchctl unload "$LAUNCH_AGENTS_DIR/$PLIST_NAME" 2>/dev/null || true
-launchctl load "$LAUNCH_AGENTS_DIR/$PLIST_NAME"
+# Create CLI symlink
+echo "  Creating CLI symlink..."
+ln -sf "$APP_BUNDLE/Contents/MacOS/needyghostty" "$BIN_LINK"
 
 # Create empty state files if needed
 [ -f "$DATA_DIR/notifications.json" ] || echo '[]' > "$DATA_DIR/notifications.json"
 [ -f "$DATA_DIR/session-map.json" ] || echo '{}' > "$DATA_DIR/session-map.json"
 
+# Start the app
+echo "  Starting NeedyGhostty..."
+pkill -x needyghostty 2>/dev/null || true
+sleep 1
+open "$APP_BUNDLE"
+
 echo ""
-echo "Done! NeedyGhostty is running."
+echo "Done! NeedyGhostty is running in your menu bar."
 echo ""
 echo "Add the following to your ~/.claude/settings.json:"
 echo ""
 cat <<HOOKS
   "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "$BIN_DIR/needyghostty hook session-start"}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "$BIN_DIR/needyghostty hook stop"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "$BIN_DIR/needyghostty hook user-prompt-submit"}]}]
+    "SessionStart": [{"hooks": [{"type": "command", "command": "$BIN_LINK hook session-start"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "$BIN_LINK hook stop"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "$BIN_LINK hook user-prompt-submit"}]}]
   }
 HOOKS
 echo ""
-echo "Make sure $BIN_DIR is in your PATH."
+echo "Make sure $(dirname "$BIN_LINK") is in your PATH."
+echo "To start at login: System Settings > General > Login Items > add NeedyGhostty"

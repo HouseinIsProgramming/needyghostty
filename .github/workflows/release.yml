@@ -18,17 +18,50 @@ jobs:
         run: swift test
 
       - name: Build universal binary
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Create app bundle
         run: |
-          swift build -c release --arch arm64 --arch x86_64
-          mkdir -p dist
-          cp .build/apple/Products/Release/needyghostty dist/needyghostty
-          cd dist && tar czf needyghostty-macos-universal.tar.gz needyghostty
-          shasum -a 256 needyghostty-macos-universal.tar.gz > needyghostty-macos-universal.tar.gz.sha256
+          APP="dist/NeedyGhostty.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp .build/apple/Products/Release/needyghostty "$APP/Contents/MacOS/needyghostty"
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > "$APP/Contents/Info.plist" << PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleIdentifier</key>
+              <string>com.needyghostty</string>
+              <key>CFBundleName</key>
+              <string>NeedyGhostty</string>
+              <key>CFBundleVersion</key>
+              <string>${VERSION}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION}</string>
+              <key>CFBundleExecutable</key>
+              <string>needyghostty</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSUIElement</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Sign app bundle
+        run: codesign --force --deep -s - dist/NeedyGhostty.app
+
+      - name: Create zip
+        run: |
+          cd dist
+          zip -r NeedyGhostty.app.zip NeedyGhostty.app
+          shasum -a 256 NeedyGhostty.app.zip > NeedyGhostty.app.zip.sha256
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            dist/needyghostty-macos-universal.tar.gz
-            dist/needyghostty-macos-universal.tar.gz.sha256
+            dist/NeedyGhostty.app.zip
+            dist/NeedyGhostty.app.zip.sha256
