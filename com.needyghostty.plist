@@ -6,7 +6,7 @@
     <string>com.needyghostty</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{{BIN_DIR}}/needyghostty</string>
+        <string>{{APP_DIR}}/NeedyGhostty.app/Contents/MacOS/needyghostty</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

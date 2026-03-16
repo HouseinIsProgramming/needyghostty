@@ -1,10 +1,11 @@
 import Cocoa
 import NeedyGhosttyCore
+import UserNotifications
 
 let menuWidth: CGFloat = 440
 let padX: CGFloat = 20
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private var dirWatcher: DispatchSourceFileSystemObject?
     private var pollTimer: Timer?
@@ -13,7 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let ghostty = GhosttyBridge()
 
     private var nativeNotificationsEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "nativeNotifications") as? Bool ?? false }
+        get { UserDefaults.standard.object(forKey: "nativeNotifications") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "nativeNotifications") }
     }
 
@@ -25,6 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setupNotificationCenter()
         setupStatusItem()
         loadNotifications()
         setupDirectoryWatcher()
@@ -32,6 +34,87 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if autoDismissEnabled, NSWorkspace.shared.frontmostApplication?.localizedName == "Ghostty" {
             startPolling()
         }
+    }
+
+    // MARK: - Notification Center
+
+    private func setupNotificationCenter() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            NSLog("NeedyGhostty: notification auth granted=\(granted) error=\(String(describing: error))")
+        }
+        center.getNotificationSettings { settings in
+            NSLog("NeedyGhostty: notification status=\(settings.authorizationStatus.rawValue) alert=\(settings.alertSetting.rawValue)")
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let terminalId = userInfo["terminal_id"] as? String {
+            ghostty.focusTerminal(terminalId)
+        }
+        if let sessionId = userInfo["session_id"] as? String {
+            removeNotification(sessionId: sessionId)
+        }
+        completionHandler()
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    private func isFocusedTerminal(_ terminalId: String) -> Bool {
+        guard NSWorkspace.shared.frontmostApplication?.localizedName == "Ghostty"
+                || NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.mitchellh.ghostty"
+        else { return false }
+        guard let focusedId = ghostty.getFocusedTerminalId() else { return false }
+        return focusedId == terminalId
+    }
+
+    private func sendNativeNotification(_ entry: NotificationEntry) {
+        if isFocusedTerminal(entry.terminal_id) {
+            NSLog("NeedyGhostty: skipping notification for \(entry.session_id) — terminal is focused")
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+
+        let project = (entry.cwd as NSString).lastPathComponent
+        content.title = "Claude Code \u{2014} \(project)"
+        content.subtitle = entry.message
+        content.body = entry.cwd
+        content.sound = .default
+        content.userInfo = [
+            "session_id": entry.session_id,
+            "terminal_id": entry.terminal_id,
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: "needyghostty-\(entry.session_id)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("NeedyGhostty: notification error: \(error)")
+            } else {
+                NSLog("NeedyGhostty: notification sent for \(entry.session_id)")
+            }
+        }
+    }
+
+    private func removeNativeNotification(sessionId: String) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: ["needyghostty-\(sessionId)"])
     }
 
     // MARK: - Status Item
@@ -182,11 +265,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if nativeNotificationsEnabled {
             for notif in notifications where !oldIds.contains(notif.session_id) {
-                let dir = (notif.cwd as NSString).lastPathComponent
-                ghostty.sendNotification(
-                    title: "Claude Code \u{2014} \(dir)",
-                    message: notif.message)
+                sendNativeNotification(notif)
             }
+        }
+
+        // Clean up native notifications for dismissed entries
+        let currentIds = Set(notifications.map(\.session_id))
+        for oldId in oldIds where !currentIds.contains(oldId) {
+            removeNativeNotification(sessionId: oldId)
         }
 
         updateBadge()
@@ -195,6 +281,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func removeNotification(sessionId: String) {
         notifications.removeAll { $0.session_id == sessionId }
         store.save(notifications)
+        removeNativeNotification(sessionId: sessionId)
         updateBadge()
     }
 

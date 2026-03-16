@@ -18,7 +18,11 @@ let package = Package(
             name: "NeedyGhostty",
             dependencies: ["NeedyGhosttyCore"],
             path: "Sources/NeedyGhostty",
-            linkerSettings: [.linkedFramework("Cocoa")]
+            exclude: ["Info.plist"],
+            linkerSettings: [
+                .linkedFramework("Cocoa"),
+                .linkedFramework("UserNotifications"),
+            ]
         ),
         .testTarget(
             name: "NeedyGhosttyTests",
