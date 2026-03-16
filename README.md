@@ -18,14 +18,14 @@ Get notified when Claude finishes responding — click the notification to jump 
 ### From source
 
 ```bash
-git clone https://github.com/housien/needyghostty.git
+git clone https://github.com/HouseinIsProgramming/needyghostty.git
 cd needyghostty
 ./install.sh
 ```
 
 ### From GitHub Releases
 
-Download `NeedyGhostty.app.zip` from the [latest release](https://github.com/housien/needyghostty/releases/latest), unzip, and move to `~/Applications`.
+Download `NeedyGhostty.app.zip` from the [latest release](https://github.com/HouseinIsProgramming/needyghostty/releases/latest), unzip, and move to `~/Applications`.
 
 Create a CLI symlink so hooks can find the binary:
 
