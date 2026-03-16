@@ -17,6 +17,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { UserDefaults.standard.set(newValue, forKey: "nativeNotifications") }
     }
 
+    private var autoDismissEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "autoDismiss") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "autoDismiss") }
+    }
+
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -24,7 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loadNotifications()
         setupDirectoryWatcher()
         setupWorkspaceObserver()
-        if NSWorkspace.shared.frontmostApplication?.localizedName == "Ghostty" {
+        if autoDismissEnabled, NSWorkspace.shared.frontmostApplication?.localizedName == "Ghostty" {
             startPolling()
         }
     }
@@ -113,6 +118,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.state = nativeNotificationsEnabled ? .on : .off
         menu.addItem(toggle)
 
+        let autoDismiss = NSMenuItem(
+            title: "  Auto-dismiss on Focus",
+            action: #selector(toggleAutoDismiss(_:)),
+            keyEquivalent: "")
+        autoDismiss.target = self
+        autoDismiss.state = autoDismissEnabled ? .on : .off
+        menu.addItem(autoDismiss)
+
         menu.addItem(NSMenuItem.separator())
 
         let clear = NSMenuItem(
@@ -140,6 +153,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleNativeNotifications(_ sender: NSMenuItem) {
         nativeNotificationsEnabled.toggle()
+    }
+
+    @objc private func toggleAutoDismiss(_ sender: NSMenuItem) {
+        autoDismissEnabled.toggle()
+        if autoDismissEnabled, NSWorkspace.shared.frontmostApplication?.localizedName == "Ghostty" {
+            startPolling()
+        } else if !autoDismissEnabled {
+            stopPolling()
+        }
     }
 
     @objc private func clearAll(_ sender: NSMenuItem) {
@@ -208,7 +230,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func appDidActivate(_ notification: Notification) {
-        guard isGhostty(notification) else { return }
+        guard autoDismissEnabled, isGhostty(notification) else { return }
         startPolling()
     }
 

@@ -45,22 +45,49 @@ if args.first == "--version" || args.first == "-v" {
     exit(0)
 }
 
+let logFile = dataDir + "/hook.log"
+
+func log(_ msg: String) {
+    let ts = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(ts)] \(msg)\n"
+    if let fh = FileHandle(forWritingAtPath: logFile) {
+        fh.seekToEndOfFile()
+        fh.write(Data(line.utf8))
+        fh.closeFile()
+    } else {
+        FileManager.default.createFile(atPath: logFile, contents: Data(line.utf8))
+    }
+}
+
 if args.first == "hook" {
-    guard let stdinData = readStdin() else { exit(0) }
-    guard let input = parseHookInput(from: stdinData) else { exit(1) }
+    let subcommand = args.count > 1 ? args[1] : "<none>"
+    log("hook \(subcommand) invoked")
+
+    guard let stdinData = readStdin() else {
+        log("hook \(subcommand): no stdin data")
+        exit(0)
+    }
+    log("hook \(subcommand): stdin=\(String(data: stdinData, encoding: .utf8) ?? "<binary>")")
+
+    guard let input = parseHookInput(from: stdinData) else {
+        log("hook \(subcommand): failed to parse JSON")
+        exit(1)
+    }
+    log("hook \(subcommand): session_id=\(input.session_id ?? "<nil>") message=\(input.message ?? "<nil>")")
 
     let handler = HookHandler(dataDir: dataDir)
-    let subcommand = args.count > 1 ? args[1] : ""
 
     switch subcommand {
     case "session-start":
         handler.handleSessionStart(input: input)
-    case "notification":
+        log("hook session-start: done")
+    case "notification", "stop":
         handler.handleNotification(input: input)
+        log("hook \(subcommand): done")
     case "user-prompt-submit":
         handler.handleUserPromptSubmit(input: input)
+        log("hook user-prompt-submit: done")
     default:
-        // Auto-detect from hook_event_name
         switch input.hook_event_name {
         case "SessionStart":
             handler.handleSessionStart(input: input)
@@ -69,7 +96,7 @@ if args.first == "hook" {
         case "UserPromptSubmit":
             handler.handleUserPromptSubmit(input: input)
         default:
-            fputs("Unknown hook type. Use: session-start, notification, user-prompt-submit\n", stderr)
+            log("hook: unknown type '\(subcommand)' / event '\(input.hook_event_name ?? "<nil>")'")
             exit(1)
         }
     }
