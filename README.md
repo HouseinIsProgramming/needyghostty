@@ -6,6 +6,12 @@ Get notified when Claude finishes responding — click the notification to jump 
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 
+## Requirements
+
+- **[Ghostty](https://ghostty.org) 1.3.0+** — requires the AppleScript API added in v1.3.0
+- **macOS 13+**
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
+
 ## Features
 
 - **Menu bar indicator** — shows how many sessions are waiting for input
