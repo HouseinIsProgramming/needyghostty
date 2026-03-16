@@ -3,18 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.ghosttynotify</string>
+    <string>com.needyghostty</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{{HOME}}/.local/bin/ghostty-notify</string>
+        <string>{{BIN_DIR}}/needyghostty</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/tmp/ghostty-notify.log</string>
+    <string>/tmp/needyghostty.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/ghostty-notify.log</string>
+    <string>/tmp/needyghostty.log</string>
 </dict>
 </plist>
