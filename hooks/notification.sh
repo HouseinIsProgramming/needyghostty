@@ -23,8 +23,17 @@ NAME=$(echo "$SESSION_INFO" | jq -r '.name')
 
 mkdir -p "$DATA_DIR"
 
-# Acquire lock
-while ! mkdir "$LOCK_DIR" 2>/dev/null; do sleep 0.05; done
+# Acquire lock (with stale detection and timeout)
+LOCK_ATTEMPTS=0
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    if [ -d "$LOCK_DIR" ]; then
+        LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || echo "$(date +%s)") ))
+        [ "$LOCK_AGE" -gt 10 ] && rmdir "$LOCK_DIR" 2>/dev/null && continue
+    fi
+    sleep 0.05
+    LOCK_ATTEMPTS=$((LOCK_ATTEMPTS + 1))
+    [ "$LOCK_ATTEMPTS" -ge 100 ] && exit 0
+done
 trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 
 [ -f "$NOTIF_FILE" ] && NOTIFS=$(cat "$NOTIF_FILE") || NOTIFS='[]'

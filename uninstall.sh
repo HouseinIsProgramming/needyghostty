@@ -14,7 +14,7 @@ launchctl unload "$LAUNCH_AGENTS_DIR/$PLIST_NAME" 2>/dev/null || true
 rm -f "$LAUNCH_AGENTS_DIR/$PLIST_NAME"
 
 # Kill running instance
-pkill -f ghostty-notify 2>/dev/null || true
+pkill -x ghostty-notify 2>/dev/null || true
 
 # Remove binary
 rm -f "$BIN_DIR/ghostty-notify"

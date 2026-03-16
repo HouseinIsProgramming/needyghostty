@@ -28,12 +28,23 @@ let lockPath = "/tmp/ghostty-notify.lock"
 // MARK: - Helpers
 
 func acquireLock() -> Bool {
-    for _ in 0..<100 {
+    for attempt in 0..<100 {
         do {
             try FileManager.default.createDirectory(
                 atPath: lockPath, withIntermediateDirectories: false)
             return true
-        } catch { usleep(50_000) }
+        } catch {
+            // Every 500ms, check if lock is stale (older than 10s)
+            if attempt % 10 == 0,
+                let attrs = try? FileManager.default.attributesOfItem(atPath: lockPath),
+                let modDate = attrs[.modificationDate] as? Date,
+                Date().timeIntervalSince(modDate) > 10
+            {
+                try? FileManager.default.removeItem(atPath: lockPath)
+                continue
+            }
+            usleep(50_000)
+        }
     }
     return false
 }
@@ -63,28 +74,25 @@ func dotColor(for message: String) -> NSColor {
 // MARK: - Custom Menu Views
 
 class NotificationItemView: NSView {
-    private let stripe = NSView()
     private let projectLabel = NSTextField(labelWithString: "")
     private let messageLabel = NSTextField(labelWithString: "")
     private let timeLabel = NSTextField(labelWithString: "")
-    private let divider = NSView()
     private var trackingArea: NSTrackingArea?
     private var isHovered = false
+    private var stripeColor: NSColor = .systemGreen
+    private var showDivider = false
     var onClick: (() -> Void)?
 
     init(entry: NotificationEntry, showDivider: Bool) {
+        self.showDivider = showDivider
         super.init(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 70))
-        setup(entry, showDivider: showDivider)
+        setup(entry)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private func setup(_ entry: NotificationEntry, showDivider: Bool) {
-        // Left color stripe
-        stripe.wantsLayer = true
-        stripe.layer?.backgroundColor = dotColor(for: entry.message).cgColor
-        stripe.layer?.cornerRadius = 1.5
-        addSubview(stripe)
+    private func setup(_ entry: NotificationEntry) {
+        stripeColor = dotColor(for: entry.message)
 
         // Project name
         let dir = (entry.cwd as NSString).lastPathComponent
@@ -103,17 +111,10 @@ class NotificationItemView: NSView {
 
         // Message
         messageLabel.font = .systemFont(ofSize: 12.5, weight: .medium)
-        messageLabel.textColor = .labelColor.withAlphaComponent(0.7)
+        messageLabel.textColor = .secondaryLabelColor
         messageLabel.lineBreakMode = .byTruncatingTail
         messageLabel.stringValue = entry.message
         addSubview(messageLabel)
-
-        // Bottom divider
-        if showDivider {
-            divider.wantsLayer = true
-            divider.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.2).cgColor
-            addSubview(divider)
-        }
     }
 
     override func layout() {
@@ -122,27 +123,29 @@ class NotificationItemView: NSView {
         let h = bounds.height
         let textX: CGFloat = padX + 14
 
-        // Left stripe — full height of content area, inset from edges
-        stripe.frame = NSRect(x: padX - 4, y: 8, width: 3, height: h - 16)
-
-        // Project name — top row
         projectLabel.frame = NSRect(x: textX, y: h - 32, width: w - textX - 80, height: 20)
-
-        // Time — right of project name
         timeLabel.frame = NSRect(x: w - padX - 60, y: h - 30, width: 56, height: 16)
-
-        // Message — second row
         messageLabel.frame = NSRect(x: textX, y: h - 54, width: w - textX - padX, height: 18)
-
-        // Divider at bottom — full width, subtle
-        divider.frame = NSRect(x: 0, y: 0, width: w, height: 0.5)
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Hover background
         if isHovered {
             NSColor.controlAccentColor.withAlphaComponent(0.08).setFill()
             bounds.fill()
         }
+
+        // Left stripe (drawn dynamically for dark/light mode)
+        stripeColor.setFill()
+        let stripeRect = NSRect(x: padX - 4, y: 8, width: 3, height: bounds.height - 16)
+        NSBezierPath(roundedRect: stripeRect, xRadius: 1.5, yRadius: 1.5).fill()
+
+        // Bottom divider
+        if showDivider {
+            NSColor.separatorColor.withAlphaComponent(0.3).setFill()
+            NSRect(x: 0, y: 0, width: bounds.width, height: 0.5).fill()
+        }
+
         super.draw(dirtyRect)
     }
 
@@ -182,33 +185,35 @@ class HeaderView: NSView {
         let text = count > 0 ? "WAITING \u{00B7} \(count)" : "ALL CLEAR"
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: NSColor.labelColor.withAlphaComponent(0.6),
+            .foregroundColor: NSColor.secondaryLabelColor,
             .kern: 1.8
         ]
         label.attributedStringValue = NSAttributedString(string: text, attributes: attrs)
         label.frame = NSRect(x: padX, y: 8, width: menuWidth - padX * 2, height: 18)
         addSubview(label)
-
-        // Bottom line
-        let line = NSView(frame: NSRect(x: padX, y: 0, width: menuWidth - padX * 2, height: 1))
-        line.wantsLayer = true
-        line.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        addSubview(line)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        NSColor.separatorColor.setFill()
+        NSRect(x: padX, y: 0, width: bounds.width - padX * 2, height: 1).fill()
+    }
 }
 
 class EmptyStateView: NSView {
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 80))
 
-        let check = NSTextField(labelWithString: "\u{2714}\u{FE0E}")
-        check.font = .systemFont(ofSize: 24, weight: .ultraLight)
-        check.textColor = .systemGreen
-        check.alignment = .center
-        check.frame = NSRect(x: 0, y: 40, width: menuWidth, height: 30)
-        addSubview(check)
+        let iconView = NSImageView()
+        if let img = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil) {
+            let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .light)
+            iconView.image = img.withSymbolConfiguration(config)
+            iconView.contentTintColor = .systemGreen
+        }
+        iconView.frame = NSRect(x: menuWidth / 2 - 14, y: 38, width: 28, height: 28)
+        addSubview(iconView)
 
         let label = NSTextField(labelWithString: "No sessions waiting")
         label.font = .systemFont(ofSize: 13, weight: .medium)
@@ -478,8 +483,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func sendNativeNotification(_ entry: NotificationEntry) {
         let dir = (entry.cwd as NSString).lastPathComponent
         let title = "Claude Code \u{2014} \(dir)"
+            .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let msg = entry.message
+            .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         runOsascriptAsync(
             "display notification \"\(msg)\" with title \"\(title)\"")
